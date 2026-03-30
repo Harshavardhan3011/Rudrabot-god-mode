@@ -1,0 +1,75 @@
+# 🔱 RUDRA.0x .gitignore Configuration
+
+# Environment variables (NEVER commit!)
+.env
+.env.local
+.env.*.local
+
+# Node modules
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build output
+dist/
+build/
+
+# Compiled TypeScript
+*.js
+*.js.map
+!dist/**/*.js
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# Database files (keep structure, ignore data)
+# SQLite
+*.sqlite
+*.db
+
+# Local JSON database
+src/database/local/*.json
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+
+# Testing
+coverage/
+.nyc_output/
+
+# PM2
+ecosystem.config.js
+
+# Backups
+*.bak
+*.backup
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Security
+.env.*.example
+secrets/
+
+# Bot token files
+token.txt
+tokens.json
+credentials.json

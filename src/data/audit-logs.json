@@ -1,0 +1,267 @@
+{
+  "logs": [
+    {
+      "id": "1774798161904-egchu7mj4",
+      "action": "vip-list",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "guildId": "1418939875012509729",
+      "guildName": "Dʀᴀɢᴏɴ x Cʜɪʀᴏ 's Eᴍᴘɪʀᴇ",
+      "details": {
+        "totalVIPs": 1
+      },
+      "timestamp": 1774798161904,
+      "success": true
+    },
+    {
+      "id": "1774798292752-9u130chi9",
+      "action": "system-health",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "guildId": "1418939875012509729",
+      "guildName": "Dʀᴀɢᴏɴ x Cʜɪʀᴏ 's Eᴍᴘɪʀᴇ",
+      "details": {
+        "uptime": 345345,
+        "memoryMB": 183.46,
+        "ping": 328,
+        "guilds": 2
+      },
+      "timestamp": 1774798292752,
+      "success": true
+    },
+    {
+      "id": "1774798336957-df808j7or",
+      "action": "admin-role-create",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "targetId": "1344818916266086531",
+      "targetName": "xp.manager_",
+      "guildId": "1418939875012509729",
+      "guildName": "Dʀᴀɢᴏɴ x Cʜɪʀᴏ 's Eᴍᴘɪʀᴇ",
+      "timestamp": 1774798336957,
+      "success": false,
+      "error": "Self-targeting attempt"
+    },
+    {
+      "id": "1774798351766-0qhs5gkov",
+      "action": "admin-role-create",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "targetId": "970124037621678100",
+      "targetName": "harsha8644",
+      "guildId": "1418939875012509729",
+      "guildName": "Dʀᴀɢᴏɴ x Cʜɪʀᴏ 's Eᴍᴘɪʀᴇ",
+      "timestamp": 1774798351766,
+      "success": false,
+      "error": "Failed to create role: Missing Permissions"
+    },
+    {
+      "id": "1774798481906-9kkbols5j",
+      "action": "bot-presence-set",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "guildId": "1418939875012509729",
+      "guildName": "Dʀᴀɢᴏɴ x Cʜɪʀᴏ 's Eᴍᴘɪʀᴇ",
+      "details": {
+        "text": "BOT IS GRINDING JUST WAIT 😗",
+        "type": "WATCHING",
+        "status": "online"
+      },
+      "timestamp": 1774798481906,
+      "success": true
+    },
+    {
+      "id": "1774798563728-5nbuozqnv",
+      "action": "dm-broadcast",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "guildId": "1418939875012509729",
+      "guildName": "Dʀᴀɢᴏɴ x Cʜɪʀᴏ 's Eᴍᴘɪʀᴇ",
+      "details": {
+        "totalMembers": 46,
+        "successCount": 44,
+        "failCount": 2
+      },
+      "timestamp": 1774798563728,
+      "success": true
+    },
+    {
+      "id": "1774798618724-sr5kfukfk",
+      "action": "dm-broadcast",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "guildId": "1418939875012509729",
+      "guildName": "Dʀᴀɢᴏɴ x Cʜɪʀᴏ 's Eᴍᴘɪʀᴇ",
+      "details": {
+        "totalMembers": 46,
+        "successCount": 44,
+        "failCount": 2
+      },
+      "timestamp": 1774798618725,
+      "success": true
+    },
+    {
+      "id": "1774798817053-fy1d7cl9o",
+      "action": "bot-presence-set",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "guildId": "1418939875012509729",
+      "guildName": "Dʀᴀɢᴏɴ x Cʜɪʀᴏ 's Eᴍᴘɪʀᴇ",
+      "details": {
+        "text": "ZORO ANNA BIG FAN 😭 KOSUKUNTA THANKS FOR DEVELOPING ME 😭📈",
+        "type": "WATCHING",
+        "status": "online"
+      },
+      "timestamp": 1774798817053,
+      "success": true
+    },
+    {
+      "id": "1774798879815-exd4ul45r",
+      "action": "vip-list",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "guildId": "1418939875012509729",
+      "guildName": "Dʀᴀɢᴏɴ x Cʜɪʀᴏ 's Eᴍᴘɪʀᴇ",
+      "details": {
+        "totalVIPs": 1
+      },
+      "timestamp": 1774798879815,
+      "success": true
+    },
+    {
+      "id": "1774886487288-rvner7a9u",
+      "action": "channel-clone-safe",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "targetId": "1488202116513140827",
+      "targetName": "Text Channels",
+      "guildId": "1488202114667905148",
+      "guildName": "Rudraa testing",
+      "details": {
+        "sourceChannelId": "1488202116513140827",
+        "clonedChannelId": "1488206534574866442",
+        "channelType": 4
+      },
+      "timestamp": 1774886487288,
+      "success": true
+    },
+    {
+      "id": "1774886553685-ccv9qx0kt",
+      "action": "server-lockdown-enable",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "guildId": "1488202114667905148",
+      "guildName": "Rudraa testing",
+      "details": {
+        "reason": "testing",
+        "lockedChannels": 2
+      },
+      "timestamp": 1774886553685,
+      "success": true
+    },
+    {
+      "id": "1774886603803-51my1kqfm",
+      "action": "vip-list",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "guildId": "1488202114667905148",
+      "guildName": "Rudraa testing",
+      "details": {
+        "totalVIPs": 1
+      },
+      "timestamp": 1774886603803,
+      "success": true
+    },
+    {
+      "id": "1774886618819-hmjbxepl6",
+      "action": "vip-grant",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "targetId": "731432475854635098",
+      "targetName": "smokie.py",
+      "guildId": "1488202114667905148",
+      "guildName": "Rudraa testing",
+      "details": {
+        "duration": "7d",
+        "expiresAt": 1775491418160
+      },
+      "timestamp": 1774886618819,
+      "success": true
+    },
+    {
+      "id": "1774886714452-blp9kqpkf",
+      "action": "system-health",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "guildId": "1488202114667905148",
+      "guildName": "Rudraa testing",
+      "details": {
+        "uptime": 592056,
+        "memoryMB": 196.84,
+        "ping": 345,
+        "guilds": 3
+      },
+      "timestamp": 1774886714452,
+      "success": true
+    },
+    {
+      "id": "1774886741280-d88w8dp1t",
+      "action": "anti-raid-enable",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "guildId": "1488202114667905148",
+      "guildName": "Rudraa testing",
+      "details": {
+        "joinThreshold": 10,
+        "timeWindow": 30000,
+        "slowmodeSeconds": 5
+      },
+      "timestamp": 1774886741280,
+      "success": true
+    },
+    {
+      "id": "1774887123626-ysrm6ka3o",
+      "action": "system-health",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "guildId": "1488202114667905148",
+      "guildName": "Rudraa testing",
+      "details": {
+        "uptime": 1001173,
+        "memoryMB": 199.56,
+        "ping": 355,
+        "guilds": 3
+      },
+      "timestamp": 1774887123626,
+      "success": true
+    },
+    {
+      "id": "1774887459690-d3zqp9cd8",
+      "action": "bot-presence-set",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "guildId": "1488202114667905148",
+      "guildName": "Rudraa testing",
+      "details": {
+        "text": "SASUKE ( AKKI ) PEDHA KOJJA GADUU",
+        "type": "PLAYING",
+        "status": "online"
+      },
+      "timestamp": 1774887459690,
+      "success": true
+    },
+    {
+      "id": "1774888291077-sez58lb5j",
+      "action": "command-executor",
+      "executorId": "1344818916266086531",
+      "executorTag": "xp.manager_",
+      "guildId": "1418939875012509729",
+      "guildName": "Dʀᴀɢᴏɴ x Cʜɪʀᴏ 's Eᴍᴘɪʀᴇ",
+      "details": {
+        "preset": "list-roles"
+      },
+      "timestamp": 1774888291077,
+      "success": true
+    }
+  ]
+}
