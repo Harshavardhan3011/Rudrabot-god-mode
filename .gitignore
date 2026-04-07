@@ -41,6 +41,9 @@ yarn-debug.log*
 # SQLite
 *.sqlite
 *.db
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
 
 # Local JSON database
 src/database/local/*.json
