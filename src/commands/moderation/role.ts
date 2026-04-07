@@ -2,6 +2,7 @@
  * MODERATION MATRIX GROUPED COMMAND: /role
  */
 import { SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
+import permissionValidator from '../../utils/permissionValidator';
 
 export const data = new SlashCommandBuilder()
   .setName('role')
@@ -42,6 +43,16 @@ export const category = 'moderation';
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   try {
     const sub = interaction.options.getSubcommand();
+
+    const roleMutationSubcommands = new Set(['give', 'take', 'mass-give', 'mass-take']);
+    if (roleMutationSubcommands.has(sub) && !permissionValidator.isOwner(interaction.user.id)) {
+      await interaction.reply({
+        content: '❌ Only owners [1344818916266086531, 970124037621678100] can give/take roles for others.',
+        ephemeral: true,
+      });
+      return;
+    }
+
     const embed = new EmbedBuilder()
       .setColor('#F97316')
       .setTitle('Moderation Matrix: /role')

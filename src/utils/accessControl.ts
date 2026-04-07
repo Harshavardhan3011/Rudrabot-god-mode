@@ -1,5 +1,22 @@
 import vipHandler from '../database/vipHandler';
 
+const FALLBACK_OWNER_IDS = new Set<string>([
+  '1344818916266086531',
+  '970124037621678100',
+]);
+
+function getOwnerIds(): Set<string> {
+  return new Set<string>(
+    [
+      ...(process.env.BOT_OWNERS || '').split(',').map((id) => id.trim()).filter(Boolean),
+      process.env.BOT_OWNER_ID || '',
+      process.env.ASHU_ID || '',
+      process.env.ZORO_ID || '',
+      ...Array.from(FALLBACK_OWNER_IDS),
+    ].filter(Boolean)
+  );
+}
+
 export enum AccessLevel {
   NORMAL_USER = 0,
   VIP = 1,
@@ -8,7 +25,7 @@ export enum AccessLevel {
 }
 
 export function getAccessLevel(userId: string): AccessLevel {
-  if (userId === process.env.ASHU_ID) {
+  if (getOwnerIds().has(userId)) {
     return AccessLevel.OWNER;
   }
 

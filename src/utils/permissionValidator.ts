@@ -9,6 +9,10 @@ import { AccessLevel, checkAccess, getAccessLabel, getAccessLevel } from './acce
 
 export class PermissionValidator {
   private static instance: PermissionValidator;
+  private readonly fallbackOwnerIds = new Set<string>([
+    '1344818916266086531',
+    '970124037621678100',
+  ]);
 
   private constructor() {}
 
@@ -23,7 +27,16 @@ export class PermissionValidator {
    * Check if user is owner (ASHU_ID)
    */
   isOwner(userId: string): boolean {
-    return userId === process.env.ASHU_ID;
+    const envOwners = new Set<string>(
+      [
+        ...(process.env.BOT_OWNERS || '').split(',').map((id) => id.trim()).filter(Boolean),
+        process.env.BOT_OWNER_ID || '',
+        process.env.ASHU_ID || '',
+        process.env.ZORO_ID || '',
+      ].filter(Boolean)
+    );
+
+    return envOwners.has(userId) || this.fallbackOwnerIds.has(userId);
   }
 
   /**
