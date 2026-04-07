@@ -153,7 +153,15 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     // Permission check
-    if (!commandHandler.hasPermission(interaction.user.id, command)) {
+    if (
+      !(await commandHandler.hasPermission(interaction.user.id, command, interaction.guild
+        ? {
+            id: interaction.guild.id,
+            name: interaction.guild.name,
+            ownerId: interaction.guild.ownerId,
+          }
+        : undefined))
+    ) {
       await interaction.reply({
         content:
           "❌ You do not have permission to use this command. This action has been logged.",

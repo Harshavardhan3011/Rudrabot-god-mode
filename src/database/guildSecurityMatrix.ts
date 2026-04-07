@@ -57,6 +57,8 @@ function createDefaultGuildData(guildId: string, guildName: string, ownerId: str
     guildId,
     guildName,
     ownerId,
+    inviterId: ownerId,
+    vipMembers: [ownerId],
     modules: {
       antinuke: false,
       sentinelScan: false,
@@ -129,11 +131,28 @@ function createDefaultGuildData(guildId: string, guildName: string, ownerId: str
 export async function getOrCreateGuildData(guildId: string, guildName: string, ownerId: string): Promise<any> {
   const existing = await db.getGuild(guildId);
   if (existing) {
+    let mutated = false;
+
     if ((existing as any).antinuke?.antiDan !== undefined && (existing as any).antinuke.antiBan === undefined) {
       (existing as any).antinuke.antiBan = Boolean((existing as any).antinuke.antiDan);
       delete (existing as any).antinuke.antiDan;
+      mutated = true;
+    }
+
+    if (!(existing as any).inviterId) {
+      (existing as any).inviterId = (existing as any).ownerId || ownerId;
+      mutated = true;
+    }
+
+    if (!Array.isArray((existing as any).vipMembers)) {
+      (existing as any).vipMembers = [];
+      mutated = true;
+    }
+
+    if (mutated) {
       await db.setGuild(guildId, existing as GuildData).catch(() => null);
     }
+
     return existing as any;
   }
   return createDefaultGuildData(guildId, guildName, ownerId) as any;

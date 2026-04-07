@@ -5,6 +5,8 @@ import { Client, Collection, REST, Routes } from "discord.js";
 import fs from "fs";
 import path from "path";
 import { Command } from "../types";
+import permissionValidator from "../utils/permissionValidator";
+import { getOrCreateGuildData } from "../database/guildSecurityMatrix";
 
 class CommandHandler {
   private client: Client;
@@ -276,12 +278,43 @@ class CommandHandler {
   /**
    * Check if user has permission to use command
    */
-  hasPermission(userId: string, command: Command): boolean {
-    const ashuId = process.env.ASHU_ID;
-    const zoroId = process.env.ZORO_ID;
+  async hasPermission(userId: string, command: Command, guildContext?: { id: string; name: string; ownerId: string }): Promise<boolean> {
+    const ownerIds = new Set(
+      [
+        ...(process.env.BOT_OWNERS || "").split(",").map((id) => id.trim()).filter(Boolean),
+        process.env.ASHU_ID || "",
+        process.env.ZORO_ID || "",
+      ].filter(Boolean)
+    );
+
+    const isOwner = ownerIds.has(userId) || permissionValidator.isOwner(userId);
 
     // Owner commands
-    if (command.ownerOnly && userId !== ashuId && userId !== zoroId) {
+    if (command.ownerOnly && !isOwner) {
+      return false;
+    }
+
+    // VIP commands
+    if (command.vipOnly && !isOwner && !permissionValidator.isAuthorized(userId)) {
+      return false;
+    }
+
+    // Security controls are restricted to inviter/VIP/owner only.
+    const moduleName = (command.module || command.category || "").toLowerCase();
+    if (moduleName === "security") {
+      if (!guildContext) {
+        return false;
+      }
+
+      const guildData = await getOrCreateGuildData(guildContext.id, guildContext.name, guildContext.ownerId);
+      const inviterId = (guildData as any).inviterId || guildContext.ownerId;
+      const vipMembers = Array.isArray((guildData as any).vipMembers) ? (guildData as any).vipMembers : [];
+
+      if (isOwner) return true;
+      if (userId === inviterId) return true;
+      if (vipMembers.includes(userId)) return true;
+      if (permissionValidator.isAuthorized(userId)) return true;
+
       return false;
     }
 

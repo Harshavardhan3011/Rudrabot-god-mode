@@ -103,6 +103,8 @@ export interface GuildData {
   icon?: string;
 
   // Module Settings
+  inviterId?: string;
+  vipMembers?: string[];
   modules: {
     antinuke: boolean;
     sentinelScan: boolean;
