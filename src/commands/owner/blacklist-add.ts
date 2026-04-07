@@ -10,12 +10,11 @@ import {
   EmbedBuilder,
   PermissionFlagsBits,
 } from 'discord.js';
-import fs from 'fs';
-import path from 'path';
 import auditLogger from '../../database/auditLogger';
 import permissionValidator from '../../utils/permissionValidator';
+import DatabaseHandler from '../../database/dbHandler';
 
-interface BlacklistRecord {
+export interface BlacklistRecord {
   userId: string;
   userName?: string;
   reason: string;
@@ -23,19 +22,10 @@ interface BlacklistRecord {
   addedBy: string;
 }
 
-interface BlacklistDatabase {
-  users: BlacklistRecord[];
-}
-
-const DB_PATH = path.join(process.cwd(), 'src', 'data', 'blacklist.json');
-
 export class BlacklistHandler {
   private static instance: BlacklistHandler;
-  private db: BlacklistDatabase = { users: [] };
 
-  private constructor() {
-    this.loadDatabase();
-  }
+  private constructor() {}
 
   static getInstance(): BlacklistHandler {
     if (!BlacklistHandler.instance) {
@@ -44,76 +34,60 @@ export class BlacklistHandler {
     return BlacklistHandler.instance;
   }
 
-  private loadDatabase(): void {
-    try {
-      if (fs.existsSync(DB_PATH)) {
-        const data = fs.readFileSync(DB_PATH, 'utf-8');
-        this.db = JSON.parse(data);
-      } else {
-        this.ensureDataDir();
-        this.saveDatabase();
-      }
-    } catch (error) {
-      console.error('❌ BlacklistHandler: Failed to load database:', error);
-      this.db = { users: [] };
-    }
+  private get db() {
+    return ((global as any).db as DatabaseHandler).getDb();
   }
 
-  private saveDatabase(): void {
-    try {
-      this.ensureDataDir();
-      fs.writeFileSync(DB_PATH, JSON.stringify(this.db, null, 2));
-    } catch (error) {
-      console.error('❌ BlacklistHandler: Failed to save database:', error);
-    }
-  }
-
-  private ensureDataDir(): void {
-    const dataDir = path.join(process.cwd(), 'src', 'data');
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
+  private mapRowToRecord(row: any): BlacklistRecord {
+    return {
+      userId: row.user_id,
+      userName: row.user_name || undefined,
+      reason: row.reason,
+      addedAt: row.added_at,
+      addedBy: row.added_by,
+    };
   }
 
   isBlacklisted(userId: string): boolean {
-    return this.db.users.some(u => u.userId === userId);
+    const stmt = this.db.prepare('SELECT 1 FROM blacklisted_users WHERE user_id = ?');
+    const row = stmt.get(userId);
+    return !!row;
   }
 
   add(userId: string, reason: string, addedBy: string, userName?: string): BlacklistRecord {
-    // Remove if already exists
-    this.db.users = this.db.users.filter(u => u.userId !== userId);
+    const addedAt = Date.now();
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO blacklisted_users (user_id, user_name, reason, added_at, added_by)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    
+    stmt.run(userId, userName || null, reason, addedAt, addedBy);
 
-    const record: BlacklistRecord = {
+    return {
       userId,
       userName,
       reason,
-      addedAt: Date.now(),
+      addedAt,
       addedBy,
     };
-
-    this.db.users.push(record);
-    this.saveDatabase();
-    return record;
   }
 
   remove(userId: string): boolean {
-    const initial = this.db.users.length;
-    this.db.users = this.db.users.filter(u => u.userId !== userId);
-
-    if (this.db.users.length < initial) {
-      this.saveDatabase();
-      return true;
-    }
-
-    return false;
+    const stmt = this.db.prepare('DELETE FROM blacklisted_users WHERE user_id = ?');
+    const info = stmt.run(userId);
+    return info.changes > 0;
   }
 
   getAll(): BlacklistRecord[] {
-    return [...this.db.users];
+    const stmt = this.db.prepare('SELECT * FROM blacklisted_users');
+    const rows = stmt.all();
+    return rows.map((row: any) => this.mapRowToRecord(row));
   }
 
   getRecord(userId: string): BlacklistRecord | null {
-    return this.db.users.find(u => u.userId === userId) || null;
+    const stmt = this.db.prepare('SELECT * FROM blacklisted_users WHERE user_id = ?');
+    const row = stmt.get(userId);
+    return row ? this.mapRowToRecord(row) : null;
   }
 }
 

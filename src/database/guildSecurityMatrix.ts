@@ -2,7 +2,6 @@ import DatabaseHandler from './dbHandler';
 import { GuildData } from '../types';
 
 const db = new DatabaseHandler(
-  (process.env.DB_TYPE as 'GITHUB_JSON' | 'SQLITE') || 'GITHUB_JSON',
   process.env.DATABASE_PATH || './src/database/rudra_main.sqlite'
 );
 
@@ -72,7 +71,7 @@ function createDefaultGuildData(guildId: string, guildName: string, ownerId: str
     channels: {},
     roles: {},
     antinuke: {
-      antiDan: false,
+      antiBan: false,
       antiKick: false,
       antiBotAdd: false,
       antiAltJoin: false,
@@ -130,6 +129,11 @@ function createDefaultGuildData(guildId: string, guildName: string, ownerId: str
 export async function getOrCreateGuildData(guildId: string, guildName: string, ownerId: string): Promise<any> {
   const existing = await db.getGuild(guildId);
   if (existing) {
+    if ((existing as any).antinuke?.antiDan !== undefined && (existing as any).antinuke.antiBan === undefined) {
+      (existing as any).antinuke.antiBan = Boolean((existing as any).antinuke.antiDan);
+      delete (existing as any).antinuke.antiDan;
+      await db.setGuild(guildId, existing as GuildData).catch(() => null);
+    }
     return existing as any;
   }
   return createDefaultGuildData(guildId, guildName, ownerId) as any;
@@ -145,6 +149,5 @@ export function buildAntiNukeMatrix(enabled: boolean): Record<string, boolean> {
   for (const key of ANTI_NUKE_FLAG_KEYS) {
     matrix[key] = enabled;
   }
-  matrix.antiDan = enabled;
   return matrix;
 }

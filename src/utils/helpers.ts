@@ -1,6 +1,97 @@
 // 🔱 RUDRA.0x Helper Functions
 // Utility functions used across the bot
 
+import { UserData } from "../types";
+import DatabaseHandler from "../database/dbHandler";
+
+/**
+ * Create default user data template
+ */
+function createDefaultUserData(userId: string, username: string): UserData {
+  return {
+    userId,
+    username,
+    tag: username,
+    avatar: "",
+    accountCreatedAt: Date.now(),
+    joinedServerAt: Date.now(),
+    balance: 0,
+    bank: 0,
+    totalEarned: 0,
+    totalSpent: 0,
+    dailyClaimedAt: 0,
+    weeklyClaimedAt: 0,
+    monthlyClaimedAt: 0,
+    xp: 0,
+    level: 1,
+    prestige: 0,
+    badges: [],
+    achievements: [],
+    trustScore: 100,
+    isBlacklisted: false,
+    isVIP: false,
+    reputation: 0,
+    warnings: [],
+    strikes: [],
+    modNotes: [],
+    isMuted: false,
+    isQuarantined: false,
+    inventory: [],
+    isAFK: false,
+    customRoles: [],
+    customBadges: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    lastActive: Date.now(),
+  };
+}
+
+/**
+ * Get or create user data from database
+ */
+export async function getOrCreateUserData(userId: string, username: string = "Unknown"): Promise<UserData | null> {
+  try {
+    const db = (global as any).db as DatabaseHandler | undefined;
+    if (!db) {
+      console.error("❌ Global database not initialized");
+      return null;
+    }
+
+    let userData = await db.getUser(userId);
+    if (!userData) {
+      userData = createDefaultUserData(userId, username);
+      const saved = await db.setUser(userId, userData);
+      if (!saved) {
+        console.error(`❌ Failed to create user data for ${userId}`);
+        return null;
+      }
+    }
+    return userData;
+  } catch (error) {
+    console.error(`❌ Error in getOrCreateUserData:`, error);
+    return null;
+  }
+}
+
+/**
+ * Save user data to database
+ */
+export async function saveUserData(userId: string, userData: UserData): Promise<boolean> {
+  try {
+    const db = (global as any).db as DatabaseHandler | undefined;
+    if (!db) {
+      console.error("❌ Global database not initialized");
+      return false;
+    }
+
+    userData.updatedAt = Date.now();
+    return await db.setUser(userId, userData);
+  } catch (error) {
+    console.error(`❌ Error in saveUserData:`, error);
+    return false;
+  }
+}
+
 /**
  * Delay execution for a specific time
  */

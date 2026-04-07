@@ -10,12 +10,11 @@ import {
   EmbedBuilder,
   PermissionFlagsBits,
 } from 'discord.js';
-import fs from 'fs';
-import path from 'path';
 import auditLogger from '../../database/auditLogger';
 import permissionValidator from '../../utils/permissionValidator';
+import DatabaseHandler from '../../database/dbHandler';
 
-interface NicknameLockRecord {
+export interface NicknameLockRecord {
   userId: string;
   guildId: string;
   lockedNickname: string;
@@ -24,19 +23,10 @@ interface NicknameLockRecord {
   reason: string;
 }
 
-interface NicknameLockDatabase {
-  locks: NicknameLockRecord[];
-}
-
-const DB_PATH = path.join(process.cwd(), 'src', 'data', 'nickname-locks.json');
-
 export class NicknameLockHandler {
   private static instance: NicknameLockHandler;
-  private db: NicknameLockDatabase = { locks: [] };
 
-  private constructor() {
-    this.loadDatabase();
-  }
+  private constructor() {}
 
   static getInstance(): NicknameLockHandler {
     if (!NicknameLockHandler.instance) {
@@ -45,79 +35,66 @@ export class NicknameLockHandler {
     return NicknameLockHandler.instance;
   }
 
-  private loadDatabase(): void {
-    try {
-      if (fs.existsSync(DB_PATH)) {
-        const data = fs.readFileSync(DB_PATH, 'utf-8');
-        this.db = JSON.parse(data);
-      } else {
-        this.ensureDataDir();
-        this.saveDatabase();
-      }
-    } catch (error) {
-      console.error('❌ NicknameLockHandler: Failed to load database:', error);
-      this.db = { locks: [] };
-    }
+  private get db() {
+    return ((global as any).db as DatabaseHandler).getDb();
   }
 
-  private saveDatabase(): void {
-    try {
-      this.ensureDataDir();
-      fs.writeFileSync(DB_PATH, JSON.stringify(this.db, null, 2));
-    } catch (error) {
-      console.error('❌ NicknameLockHandler: Failed to save database:', error);
-    }
-  }
-
-  private ensureDataDir(): void {
-    const dataDir = path.join(process.cwd(), 'src', 'data');
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
+  private mapRowToLock(row: any): NicknameLockRecord {
+    return {
+      userId: row.user_id,
+      guildId: row.guild_id,
+      lockedNickname: row.locked_nickname,
+      lockedAt: row.locked_at,
+      lockedBy: row.locked_by,
+      reason: row.reason,
+    };
   }
 
   lock(userId: string, guildId: string, nickname: string, lockedBy: string, reason: string): NicknameLockRecord {
-    // Remove if already exists
-    this.db.locks = this.db.locks.filter(l => !(l.userId === userId && l.guildId === guildId));
+    const lockedAt = Date.now();
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO nickname_locks 
+      (user_id, guild_id, locked_nickname, locked_at, locked_by, reason)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
 
-    const record: NicknameLockRecord = {
+    stmt.run(userId, guildId, nickname, lockedAt, lockedBy, reason);
+
+    return {
       userId,
       guildId,
       lockedNickname: nickname,
-      lockedAt: Date.now(),
+      lockedAt,
       lockedBy,
       reason,
     };
-
-    this.db.locks.push(record);
-    this.saveDatabase();
-    return record;
   }
 
   unlock(userId: string, guildId: string): boolean {
-    const initial = this.db.locks.length;
-    this.db.locks = this.db.locks.filter(l => !(l.userId === userId && l.guildId === guildId));
-
-    if (this.db.locks.length < initial) {
-      this.saveDatabase();
-      return true;
-    }
-
-    return false;
+    const stmt = this.db.prepare('DELETE FROM nickname_locks WHERE user_id = ? AND guild_id = ?');
+    const info = stmt.run(userId, guildId);
+    return info.changes > 0;
   }
 
   getLock(userId: string, guildId: string): NicknameLockRecord | null {
-    return this.db.locks.find(l => l.userId === userId && l.guildId === guildId) || null;
+    const stmt = this.db.prepare('SELECT * FROM nickname_locks WHERE user_id = ? AND guild_id = ?');
+    const row = stmt.get(userId, guildId);
+    return row ? this.mapRowToLock(row) : null;
   }
 
   isLocked(userId: string, guildId: string): boolean {
-    return this.db.locks.some(l => l.userId === userId && l.guildId === guildId);
+    const stmt = this.db.prepare('SELECT 1 FROM nickname_locks WHERE user_id = ? AND guild_id = ?');
+    const row = stmt.get(userId, guildId);
+    return !!row;
   }
 
   getAll(): NicknameLockRecord[] {
-    return [...this.db.locks];
+    const stmt = this.db.prepare('SELECT * FROM nickname_locks');
+    const rows = stmt.all();
+    return rows.map((row: any) => this.mapRowToLock(row));
   }
 }
+
 
 const lockHandler = NicknameLockHandler.getInstance();
 

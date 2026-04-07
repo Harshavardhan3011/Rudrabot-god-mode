@@ -1,5 +1,5 @@
-// 🔱 RUDRA.0x Hybrid Database Handler
-// Supports both GitHub JSON and SQLite - completely abstracted layer
+// 🔱 RUDRA.0x Exclusive SQLite Database Handler
+// Centralized, high-performance SQLite abstraction layer
 
 import fs from "fs";
 import path from "path";
@@ -7,34 +7,35 @@ import Database from "better-sqlite3";
 import { UserData, GuildData } from "../types";
 
 class DatabaseHandler {
-  private dbType: "GITHUB_JSON" | "SQLITE";
-  private jsonDbPath: string;
-  private sqliteDb?: Database.Database;
+  private sqliteDb: Database.Database;
 
-  constructor(dbType: "GITHUB_JSON" | "SQLITE", dbPath: string) {
-    this.dbType = dbType;
-    this.jsonDbPath = path.join(process.cwd(), "src/database/local");
-
-    if (!fs.existsSync(this.jsonDbPath)) {
-      fs.mkdirSync(this.jsonDbPath, { recursive: true });
+  constructor(dbPath: string) {
+    const dbDir = path.dirname(dbPath);
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
     }
 
-    if (dbType === "SQLITE") {
-      this.sqliteDb = new Database(dbPath);
-      this.initializeSQLiteSchema();
-    } else {
-      this.ensureJsonFiles();
-    }
+    this.sqliteDb = new Database(dbPath);
+    
+    // Enable WAL mode for better concurrency performance
+    this.sqliteDb.pragma('journal_mode = WAL');
+    
+    this.initializeSQLiteSchema();
 
-    console.log(`📦 Database initialized: ${dbType}`);
+    console.log(`📦 Database initialized at ${dbPath}`);
+  }
+
+  /**
+   * Get the underlying better-sqlite3 database instance
+   */
+  getDb(): Database.Database {
+    return this.sqliteDb;
   }
 
   /**
    * Initialize SQLite schema (creates tables if they don't exist)
    */
   private initializeSQLiteSchema() {
-    if (!this.sqliteDb) return;
-
     // Users table
     this.sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS users (
@@ -67,55 +68,100 @@ class DatabaseHandler {
         FOREIGN KEY(user_id) REFERENCES users(user_id)
       )
     `);
+    
+    // Audit Logs table
+    this.sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id TEXT PRIMARY KEY,
+        action TEXT NOT NULL,
+        executor_id TEXT NOT NULL,
+        executor_tag TEXT,
+        target_id TEXT,
+        target_name TEXT,
+        guild_id TEXT NOT NULL,
+        guild_name TEXT,
+        details TEXT,
+        timestamp INTEGER NOT NULL,
+        success INTEGER NOT NULL,
+        error TEXT
+      )
+    `);
+
+    // Indexes for audit logs
+    this.sqliteDb.exec(`
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_executor ON audit_logs(executor_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_guild ON audit_logs(guild_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
+    `);
+
+    // VIP Users table
+    this.sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS vip_users (
+        user_id TEXT PRIMARY KEY,
+        tier TEXT NOT NULL,
+        granted_at INTEGER NOT NULL,
+        expires_at INTEGER,
+        granted_by TEXT NOT NULL
+      )
+    `);
+
+    // Blacklist table
+    this.sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS blacklisted_users (
+        user_id TEXT PRIMARY KEY,
+        user_name TEXT,
+        reason TEXT NOT NULL,
+        added_at INTEGER NOT NULL,
+        added_by TEXT NOT NULL
+      )
+    `);
+
+    // Anti-Raid table
+    this.sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS anti_raid_configs (
+        guild_id TEXT PRIMARY KEY,
+        enabled INTEGER NOT NULL,
+        enabled_at INTEGER NOT NULL,
+        enabled_by TEXT NOT NULL,
+        join_threshold INTEGER NOT NULL,
+        time_window INTEGER NOT NULL,
+        slowmode_seconds INTEGER NOT NULL,
+        verification_level TEXT NOT NULL
+      )
+    `);
+
+    // Nickname Locks table
+    this.sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS nickname_locks (
+        user_id TEXT NOT NULL,
+        guild_id TEXT NOT NULL,
+        locked_nickname TEXT NOT NULL,
+        locked_at INTEGER NOT NULL,
+        locked_by TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        PRIMARY KEY (user_id, guild_id)
+      )
+    `);
+
+    // Server Backups table
+    this.sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS server_backups (
+        id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        created_by TEXT NOT NULL,
+        data TEXT NOT NULL
+      )
+    `);
 
     console.log("✅ SQLite schema initialized");
   }
 
   /**
-   * Ensure JSON files exist
-   */
-  private ensureJsonFiles() {
-    const userFile = path.join(this.jsonDbPath, "users.json");
-    const guildFile = path.join(this.jsonDbPath, "guilds.json");
-
-    if (!fs.existsSync(userFile)) {
-      fs.writeFileSync(userFile, JSON.stringify({}, null, 2));
-    }
-    if (!fs.existsSync(guildFile)) {
-      fs.writeFileSync(guildFile, JSON.stringify({}, null, 2));
-    }
-  }
-
-  /**
-   * Get user data - abstracted for both JSON and SQLite
+   * Get user data
    */
   async getUser(userId: string): Promise<UserData | null> {
-    if (this.dbType === "GITHUB_JSON") {
-      return this.getUserFromJson(userId);
-    } else {
-      return this.getUserFromSQLite(userId);
-    }
-  }
-
-  /**
-   * Get user from JSON
-   */
-  private getUserFromJson(userId: string): UserData | null {
-    try {
-      const filePath = path.join(this.jsonDbPath, "users.json");
-      const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
-      return data[userId] || null;
-    } catch (error) {
-      console.error(`❌ Error reading user from JSON:`, error);
-      return null;
-    }
-  }
-
-  /**
-   * Get user from SQLite
-   */
-  private getUserFromSQLite(userId: string): UserData | null {
-    if (!this.sqliteDb) return null;
     try {
       const stmt = this.sqliteDb.prepare("SELECT data FROM users WHERE user_id = ?");
       const result = stmt.get(userId) as { data: string } | undefined;
@@ -127,37 +173,9 @@ class DatabaseHandler {
   }
 
   /**
-   * Set user data - abstracted for both sources
+   * Set user data
    */
   async setUser(userId: string, userData: UserData): Promise<boolean> {
-    if (this.dbType === "GITHUB_JSON") {
-      return this.setUserJson(userId, userData);
-    } else {
-      return this.setUserSQLite(userId, userData);
-    }
-  }
-
-  /**
-   * Set user in JSON
-   */
-  private setUserJson(userId: string, userData: UserData): boolean {
-    try {
-      const filePath = path.join(this.jsonDbPath, "users.json");
-      const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
-      data[userId] = userData;
-      fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-      return true;
-    } catch (error) {
-      console.error(`❌ Error saving user to JSON:`, error);
-      return false;
-    }
-  }
-
-  /**
-   * Set user in SQLite
-   */
-  private setUserSQLite(userId: string, userData: UserData): boolean {
-    if (!this.sqliteDb) return false;
     try {
       const stmt = this.sqliteDb.prepare(`
         INSERT OR REPLACE INTO users (user_id, data, created_at, updated_at)
@@ -175,32 +193,6 @@ class DatabaseHandler {
    * Get guild data
    */
   async getGuild(guildId: string): Promise<GuildData | null> {
-    if (this.dbType === "GITHUB_JSON") {
-      return this.getGuildFromJson(guildId);
-    } else {
-      return this.getGuildFromSQLite(guildId);
-    }
-  }
-
-  /**
-   * Get guild from JSON
-   */
-  private getGuildFromJson(guildId: string): GuildData | null {
-    try {
-      const filePath = path.join(this.jsonDbPath, "guilds.json");
-      const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
-      return data[guildId] || null;
-    } catch (error) {
-      console.error(`❌ Error reading guild from JSON:`, error);
-      return null;
-    }
-  }
-
-  /**
-   * Get guild from SQLite
-   */
-  private getGuildFromSQLite(guildId: string): GuildData | null {
-    if (!this.sqliteDb) return null;
     try {
       const stmt = this.sqliteDb.prepare("SELECT data FROM guilds WHERE guild_id = ?");
       const result = stmt.get(guildId) as { data: string } | undefined;
@@ -215,34 +207,6 @@ class DatabaseHandler {
    * Set guild data
    */
   async setGuild(guildId: string, guildData: GuildData): Promise<boolean> {
-    if (this.dbType === "GITHUB_JSON") {
-      return this.setGuildJson(guildId, guildData);
-    } else {
-      return this.setGuildSQLite(guildId, guildData);
-    }
-  }
-
-  /**
-   * Set guild in JSON
-   */
-  private setGuildJson(guildId: string, guildData: GuildData): boolean {
-    try {
-      const filePath = path.join(this.jsonDbPath, "guilds.json");
-      const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
-      data[guildId] = guildData;
-      fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-      return true;
-    } catch (error) {
-      console.error(`❌ Error saving guild to JSON:`, error);
-      return false;
-    }
-  }
-
-  /**
-   * Set guild in SQLite
-   */
-  private setGuildSQLite(guildId: string, guildData: GuildData): boolean {
-    if (!this.sqliteDb) return false;
     try {
       const stmt = this.sqliteDb.prepare(`
         INSERT OR REPLACE INTO guilds (guild_id, data, created_at, updated_at)
@@ -260,115 +224,65 @@ class DatabaseHandler {
    * Delete user data
    */
   async deleteUser(userId: string): Promise<boolean> {
-    if (this.dbType === "GITHUB_JSON") {
-      try {
-        const filePath = path.join(this.jsonDbPath, "users.json");
-        const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
-        delete data[userId];
-        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-        return true;
-      } catch (error) {
-        console.error(`❌ Error deleting user from JSON:`, error);
-        return false;
-      }
-    } else if (this.sqliteDb) {
-      try {
-        const stmt = this.sqliteDb.prepare("DELETE FROM users WHERE user_id = ?");
-        stmt.run(userId);
-        return true;
-      } catch (error) {
-        console.error(`❌ Error deleting user from SQLite:`, error);
-        return false;
-      }
+    try {
+      const stmt = this.sqliteDb.prepare("DELETE FROM users WHERE user_id = ?");
+      stmt.run(userId);
+      return true;
+    } catch (error) {
+      console.error(`❌ Error deleting user from SQLite:`, error);
+      return false;
     }
-    return false;
   }
 
   /**
    * Delete guild data
    */
   async deleteGuild(guildId: string): Promise<boolean> {
-    if (this.dbType === "GITHUB_JSON") {
-      try {
-        const filePath = path.join(this.jsonDbPath, "guilds.json");
-        const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
-        delete data[guildId];
-        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-        return true;
-      } catch (error) {
-        console.error(`❌ Error deleting guild from JSON:`, error);
-        return false;
-      }
-    } else if (this.sqliteDb) {
-      try {
-        const stmt = this.sqliteDb.prepare("DELETE FROM guilds WHERE guild_id = ?");
-        stmt.run(guildId);
-        return true;
-      } catch (error) {
-        console.error(`❌ Error deleting guild from SQLite:`, error);
-        return false;
-      }
+    try {
+      const stmt = this.sqliteDb.prepare("DELETE FROM guilds WHERE guild_id = ?");
+      stmt.run(guildId);
+      return true;
+    } catch (error) {
+      console.error(`❌ Error deleting guild from SQLite:`, error);
+      return false;
     }
-    return false;
   }
 
   /**
    * Get all users (useful for admin operations)
    */
   async getAllUsers(): Promise<UserData[]> {
-    if (this.dbType === "GITHUB_JSON") {
-      try {
-        const filePath = path.join(this.jsonDbPath, "users.json");
-        const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
-        return Object.values(data) as UserData[];
-      } catch (error) {
-        console.error(`❌ Error reading all users from JSON:`, error);
-        return [];
-      }
-    } else if (this.sqliteDb) {
-      try {
-        const stmt = this.sqliteDb.prepare("SELECT data FROM users");
-        const results = stmt.all() as { data: string }[];
-        return results.map((r) => JSON.parse(r.data));
-      } catch (error) {
-        console.error(`❌ Error reading all users from SQLite:`, error);
-        return [];
-      }
+    try {
+      const stmt = this.sqliteDb.prepare("SELECT data FROM users");
+      const results = stmt.all() as { data: string }[];
+      return results.map((r) => JSON.parse(r.data));
+    } catch (error) {
+      console.error(`❌ Error reading all users from SQLite:`, error);
+      return [];
     }
-    return [];
   }
 
   /**
    * Get all guilds
    */
   async getAllGuilds(): Promise<GuildData[]> {
-    if (this.dbType === "GITHUB_JSON") {
-      try {
-        const filePath = path.join(this.jsonDbPath, "guilds.json");
-        const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
-        return Object.values(data) as GuildData[];
-      } catch (error) {
-        console.error(`❌ Error reading all guilds from JSON:`, error);
-        return [];
-      }
-    } else if (this.sqliteDb) {
-      try {
-        const stmt = this.sqliteDb.prepare("SELECT data FROM guilds");
-        const results = stmt.all() as { data: string }[];
-        return results.map((r) => JSON.parse(r.data));
-      } catch (error) {
-        console.error(`❌ Error reading all guilds from SQLite:`, error);
-        return [];
-      }
+    try {
+      const stmt = this.sqliteDb.prepare("SELECT data FROM guilds");
+      const results = stmt.all() as { data: string }[];
+      return results.map((r) => JSON.parse(r.data));
+    } catch (error) {
+      console.error(`❌ Error reading all guilds from SQLite:`, error);
+      return [];
     }
-    return [];
   }
 
   /**
-   * Close database connection (for SQLite)
+   * Close database connection
    */
   close() {
     if (this.sqliteDb) {
+      // Create a checkpoint before closing
+      this.sqliteDb.pragma('wal_checkpoint(RESTART)');
       this.sqliteDb.close();
       console.log("✅ SQLite connection closed");
     }

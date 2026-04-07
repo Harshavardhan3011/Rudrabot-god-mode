@@ -3,8 +3,7 @@
  * Tracks: action, executor, target, timestamp, guild
  */
 
-import fs from 'fs';
-import path from 'path';
+import DatabaseHandler from './dbHandler';
 
 export interface AuditLog {
   id: string;
@@ -21,20 +20,10 @@ export interface AuditLog {
   error?: string;
 }
 
-interface AuditDatabase {
-  logs: AuditLog[];
-}
-
-const DB_PATH = path.join(process.cwd(), 'src', 'data', 'audit-logs.json');
-const MAX_LOGS = 10000; // Keep last 10k logs
-
 export class AuditLogger {
   private static instance: AuditLogger;
-  private db: AuditDatabase = { logs: [] };
 
-  private constructor() {
-    this.loadDatabase();
-  }
+  private constructor() {}
 
   static getInstance(): AuditLogger {
     if (!AuditLogger.instance) {
@@ -43,48 +32,8 @@ export class AuditLogger {
     return AuditLogger.instance;
   }
 
-  /**
-   * Load audit logs from JSON file
-   */
-  private loadDatabase(): void {
-    try {
-      if (fs.existsSync(DB_PATH)) {
-        const data = fs.readFileSync(DB_PATH, 'utf-8');
-        this.db = JSON.parse(data);
-      } else {
-        this.ensureDataDir();
-        this.saveDatabase();
-      }
-    } catch (error) {
-      console.error('❌ AuditLogger: Failed to load database:', error);
-      this.db = { logs: [] };
-    }
-  }
-
-  /**
-   * Save audit logs to JSON file
-   */
-  private saveDatabase(): void {
-    try {
-      this.ensureDataDir();
-      // Keep only last MAX_LOGS entries
-      if (this.db.logs.length > MAX_LOGS) {
-        this.db.logs = this.db.logs.slice(-MAX_LOGS);
-      }
-      fs.writeFileSync(DB_PATH, JSON.stringify(this.db, null, 2));
-    } catch (error) {
-      console.error('❌ AuditLogger: Failed to save database:', error);
-    }
-  }
-
-  /**
-   * Ensure data directory exists
-   */
-  private ensureDataDir(): void {
-    const dataDir = path.join(process.cwd(), 'src', 'data');
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
+  private get db() {
+    return ((global as any).db as DatabaseHandler).getDb();
   }
 
   /**
@@ -124,8 +73,31 @@ export class AuditLogger {
       error: params.error,
     };
 
-    this.db.logs.push(entry);
-    this.saveDatabase();
+    try {
+      const stmt = this.db.prepare(`
+        INSERT INTO audit_logs (
+          id, action, executor_id, executor_tag, target_id, target_name,
+          guild_id, guild_name, details, timestamp, success, error
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      
+      stmt.run(
+        entry.id,
+        entry.action,
+        entry.executorId,
+        entry.executorTag || null,
+        entry.targetId || null,
+        entry.targetName || null,
+        entry.guildId,
+        entry.guildName || null,
+        entry.details ? JSON.stringify(entry.details) : null,
+        entry.timestamp,
+        entry.success ? 1 : 0,
+        entry.error || null
+      );
+    } catch (e) {
+      console.error('❌ AuditLogger: Failed to save log to SQLite:', e);
+    }
 
     // Also log to console
     const status = params.success ? '✅' : '❌';
@@ -136,32 +108,57 @@ export class AuditLogger {
     return entry;
   }
 
+  private mapRowToLog(row: any): AuditLog {
+    return {
+      id: row.id,
+      action: row.action,
+      executorId: row.executor_id,
+      executorTag: row.executor_tag,
+      targetId: row.target_id,
+      targetName: row.target_name,
+      guildId: row.guild_id,
+      guildName: row.guild_name,
+      details: row.details ? JSON.parse(row.details) : undefined,
+      timestamp: row.timestamp,
+      success: row.success === 1,
+      error: row.error
+    };
+  }
+
   /**
    * Get logs for a specific user
    */
   getLogsForUser(userId: string, limit: number = 50): AuditLog[] {
-    return this.db.logs.filter(log => log.executorId === userId).slice(-limit);
+    const stmt = this.db.prepare('SELECT * FROM audit_logs WHERE executor_id = ? ORDER BY timestamp DESC LIMIT ?');
+    const rows = stmt.all(userId, limit);
+    return rows.map(this.mapRowToLog).reverse();
   }
 
   /**
    * Get logs for a specific guild
    */
   getLogsForGuild(guildId: string, limit: number = 100): AuditLog[] {
-    return this.db.logs.filter(log => log.guildId === guildId).slice(-limit);
+    const stmt = this.db.prepare('SELECT * FROM audit_logs WHERE guild_id = ? ORDER BY timestamp DESC LIMIT ?');
+    const rows = stmt.all(guildId, limit);
+    return rows.map(this.mapRowToLog).reverse();
   }
 
   /**
    * Get logs for a specific action
    */
   getLogsForAction(action: string, limit: number = 50): AuditLog[] {
-    return this.db.logs.filter(log => log.action === action).slice(-limit);
+    const stmt = this.db.prepare('SELECT * FROM audit_logs WHERE action = ? ORDER BY timestamp DESC LIMIT ?');
+    const rows = stmt.all(action, limit);
+    return rows.map(this.mapRowToLog).reverse();
   }
 
   /**
    * Get all recent logs
    */
   getRecentLogs(limit: number = 100): AuditLog[] {
-    return this.db.logs.slice(-limit);
+    const stmt = this.db.prepare('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT ?');
+    const rows = stmt.all(limit);
+    return rows.map(this.mapRowToLog).reverse();
   }
 
   /**
@@ -175,30 +172,36 @@ export class AuditLogger {
     since?: number; // Timestamp
     limit?: number;
   }): AuditLog[] {
-    let results = [...this.db.logs];
+    let query = 'SELECT * FROM audit_logs WHERE 1=1';
+    const args: any[] = [];
 
     if (params.action) {
-      results = results.filter(log => log.action === params.action);
+      query += ' AND action = ?';
+      args.push(params.action);
     }
-
     if (params.executorId) {
-      results = results.filter(log => log.executorId === params.executorId);
+      query += ' AND executor_id = ?';
+      args.push(params.executorId);
     }
-
     if (params.guildId) {
-      results = results.filter(log => log.guildId === params.guildId);
+      query += ' AND guild_id = ?';
+      args.push(params.guildId);
     }
-
     if (params.targetId) {
-      results = results.filter(log => log.targetId === params.targetId);
+      query += ' AND target_id = ?';
+      args.push(params.targetId);
     }
-
     if (params.since) {
-      results = results.filter(log => log.timestamp >= params.since!);
+      query += ' AND timestamp >= ?';
+      args.push(params.since);
     }
 
-    const limit = params.limit || 50;
-    return results.slice(-limit);
+    query += ' ORDER BY timestamp DESC LIMIT ?';
+    args.push(params.limit || 50);
+
+    const stmt = this.db.prepare(query);
+    const rows = stmt.all(...args);
+    return rows.map(this.mapRowToLog).reverse();
   }
 
   /**
@@ -214,17 +217,18 @@ export class AuditLogger {
    * Purge old logs (older than specified timestamp)
    */
   purgeOlderThan(timestamp: number): number {
-    const initial = this.db.logs.length;
-    this.db.logs = this.db.logs.filter(log => log.timestamp > timestamp);
-    this.saveDatabase();
-    return initial - this.db.logs.length;
+    const stmt = this.db.prepare('DELETE FROM audit_logs WHERE timestamp < ?');
+    const info = stmt.run(timestamp);
+    return info.changes;
   }
 
   /**
    * Get total log count
    */
   getLogCount(): number {
-    return this.db.logs.length;
+    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM audit_logs');
+    const row = stmt.get() as { count: number };
+    return row.count;
   }
 }
 

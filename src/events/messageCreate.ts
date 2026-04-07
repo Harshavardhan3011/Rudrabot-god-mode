@@ -1,14 +1,26 @@
 // 🔱 RUDRA.0x Message Create Event - Prefix Command Handler
-// Handles messages starting with + prefix for text-based commands
+// Handles messages starting with + prefix for text-based commands and antinuke scanning
 
 import { EventHandler } from "../types";
 import { Message, ChannelType } from "discord.js";
+import { handleShieldMessage } from "../utils/antinukeGuard";
 
 const messageCreateEvent: EventHandler = {
   name: "messageCreate",
   execute: async (message: Message) => {
     // Ignore bot messages and system messages
     if (message.author.bot || message.system) return;
+
+    if (message.guild) {
+      const handled = await handleShieldMessage(message).catch((error) => {
+        console.error('❌ Antinuke message guard failed:', error);
+        return false;
+      });
+
+      if (handled) {
+        return;
+      }
+    }
 
     // Get prefix from env or default to +
     const prefix = process.env.PREFIX || "+";

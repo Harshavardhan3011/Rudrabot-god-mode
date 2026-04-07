@@ -43,10 +43,9 @@ const commandHandler = new CommandHandler(client);
 // Initialize event handler
 const eventHandler = new EventHandlerClass(client);
 
-// Initialize database (check env for type)
-const dbType = (process.env.DB_TYPE || "GITHUB_JSON") as "GITHUB_JSON" | "SQLITE";
+// Initialize database
 const dbPath = process.env.DATABASE_PATH || "./src/database/rudra_main.sqlite";
-const db = new DatabaseHandler(dbType, dbPath);
+const db = new DatabaseHandler(dbPath);
 
 // Initialize status rotator
 const statusRotator = new StatusRotator(
@@ -99,12 +98,12 @@ client.once("ready", async () => {
   console.log(chalk.gray(`   🆔 Client ID: ${client.user?.id}`));
   console.log(chalk.gray(`   🌍 Servers: ${client.guilds.cache.size}`));
   console.log(chalk.gray(`   👥 Total Users: ${client.users.cache.size}`));
-  console.log(chalk.gray(`   📦 Database Type: ${dbType}`));
+  console.log(chalk.gray(`   📦 Database Type: SQLITE`));
 
   console.log(chalk.yellow("\n📂 HANDLERS LOADED:"));
   console.log(chalk.gray(`   ✅ Command Handler: ${commandHandler.getCommandCount()} commands`));
   console.log(chalk.gray(`   ✅ Event Handler: ${eventHandler.getEventCount()} events`));
-  console.log(chalk.gray(`   ✅ Database Handler: ${dbType} (Ready)`));
+  console.log(chalk.gray(`   ✅ Database Handler: SQLITE (Ready)`));
 
   // Start status rotator
   statusRotator.start(parseInt(process.env.VC_STATUS_INTERVAL || "600000"));
@@ -127,6 +126,12 @@ client.once("ready", async () => {
   client.user?.setActivity(initialStatus, { type: ActivityType.Playing });
 
   console.log(chalk.cyan.bold("\n🌟 RUDRA.0x is SUPREMACY ONLINE! 🌟\n"));
+
+  const shouldRegisterCommands = process.env.REGISTER_COMMANDS === "true";
+  if (shouldRegisterCommands) {
+    console.log(chalk.blue("📋 Syncing slash commands to guild(s)..."));
+    await commandHandler.registerSlashCommands();
+  }
 });
 
 // ============================================
@@ -134,6 +139,8 @@ client.once("ready", async () => {
 // ============================================
 
 client.on("interactionCreate", async (interaction) => {
+  console.log(chalk.gray(`📩 Interaction received: ${interaction.type} | ${interaction.id}`));
+
   // Slash Command Handling
   if (interaction.isChatInputCommand()) {
     const command = commandHandler.getCommand(interaction.commandName);
@@ -172,10 +179,21 @@ client.on("interactionCreate", async (interaction) => {
         chalk.red(`❌ Error executing command ${command.name}:`),
         error
       );
-      await interaction.reply({
-        content: "❌ There was an error executing this command.",
-        ephemeral: true,
-      });
+      if (interaction.deferred || interaction.replied) {
+        await interaction
+          .followUp({
+            content: "❌ There was an error executing this command.",
+            ephemeral: true,
+          })
+          .catch(() => null);
+      } else {
+        await interaction
+          .reply({
+            content: "❌ There was an error executing this command.",
+            ephemeral: true,
+          })
+          .catch(() => null);
+      }
     }
   }
 
@@ -193,6 +211,11 @@ client.on("interactionCreate", async (interaction) => {
       // For now, just acknowledge
       await interaction.deferUpdate();
     }
+  }
+
+  // Select menu interactions are handled by per-message collectors (e.g. help command).
+  if (interaction.isStringSelectMenu()) {
+    console.log(chalk.blue(`🧭 Select menu interaction: ${interaction.customId}`));
   }
 });
 
@@ -222,18 +245,11 @@ async function initialize() {
     console.log(chalk.yellow("🔄 Loading events..."));
     await eventHandler.loadEvents();
 
-    // Only register slash commands if REGISTER_COMMANDS is explicitly set
-    const shouldRegisterCommands = process.env.REGISTER_COMMANDS === "true";
-    if (shouldRegisterCommands) {
-      console.log(chalk.blue("📋 Registering slash commands..."));
-      await commandHandler.registerSlashCommands();
-    } else {
-      console.log(
-        chalk.gray(
-          "⏭️  Skipped slash command registration (use 'npx ts-node src/deploy-commands.ts' to register)"
-        )
-      );
-    }
+    console.log(
+      chalk.gray(
+        "ℹ️ Slash command sync runs after ready event (set REGISTER_COMMANDS=false to disable)."
+      )
+    );
 
     console.log(chalk.yellow("\n🚀 Logging in to Discord..."));
     await client.login(process.env.BOT_TOKEN);

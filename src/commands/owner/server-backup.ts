@@ -1,7 +1,7 @@
 /**
  * Server Backup Command - Create a snapshot of server data (channels, roles, config)
  * Owner/VIP only
- * Saves backup metadata to JSON
+ * Saves backup metadata into SQLite database
  */
 
 import {
@@ -10,10 +10,9 @@ import {
   EmbedBuilder,
   PermissionFlagsBits,
 } from 'discord.js';
-import fs from 'fs';
-import path from 'path';
 import auditLogger from '../../database/auditLogger';
 import permissionValidator from '../../utils/permissionValidator';
+import DatabaseHandler from '../../database/dbHandler';
 
 interface BackupData {
   id: string;
@@ -31,7 +30,7 @@ interface BackupData {
     id: string;
     name: string;
     color: number;
-    permissions: bigint;
+    permissions: string; // Store as string for backup safely
   }>;
   memberCount: number;
   ownerId: string;
@@ -90,7 +89,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
         id: r.id,
         name: r.name,
         color: r.color,
-        permissions: r.permissions.bitfield,
+        permissions: r.permissions.bitfield.toString(), // Convert BigInt to string safely
       }));
 
       // Fetch member count
@@ -99,26 +98,28 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
       // Create backup object
       const backupId = `${guild.id}-${Date.now()}`;
+      const createdAt = Date.now();
+      const createdBy = interaction.user.id;
+      
       const backup: BackupData = {
         id: backupId,
         guildId: guild.id,
         guildName: guild.name,
-        createdAt: Date.now(),
-        createdBy: interaction.user.id,
+        createdAt,
+        createdBy,
         channels,
         roles,
         memberCount,
         ownerId: guild.ownerId,
       };
 
-      // Save backup to file
-      const backupDir = path.join(process.cwd(), 'src', 'data', 'backups');
-      if (!fs.existsSync(backupDir)) {
-        fs.mkdirSync(backupDir, { recursive: true });
-      }
-
-      const backupPath = path.join(backupDir, `${backupId}.json`);
-      fs.writeFileSync(backupPath, JSON.stringify(backup, null, 2));
+      // Save backup to SQLite
+      const db = ((global as any).db as DatabaseHandler).getDb();
+      const stmt = db.prepare(`
+        INSERT INTO server_backups (id, guild_id, created_at, created_by, data)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      stmt.run(backupId, guild.id, createdAt, createdBy, JSON.stringify(backup));
 
       const successEmbed = new EmbedBuilder()
         .setColor('#00FF00')
@@ -141,8 +142,8 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
             inline: true,
           },
           {
-            name: 'Backup Location',
-            value: `\`src/data/backups/${backupId}.json\``,
+            name: 'Storage',
+            value: '`SQLite Backend (server_backups table)`',
             inline: false,
           }
         )
@@ -199,3 +200,4 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     });
   }
 }
+

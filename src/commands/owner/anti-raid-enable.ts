@@ -11,12 +11,11 @@ import {
   PermissionFlagsBits,
   ChannelType,
 } from 'discord.js';
-import fs from 'fs';
-import path from 'path';
 import auditLogger from '../../database/auditLogger';
 import permissionValidator from '../../utils/permissionValidator';
+import DatabaseHandler from '../../database/dbHandler';
 
-interface RaidConfig {
+export interface RaidConfig {
   guildId: string;
   enabled: boolean;
   enabledAt: number;
@@ -27,20 +26,11 @@ interface RaidConfig {
   verificationLevel: string; // 'MEDIUM' | 'HIGH' | 'VERY_HIGH'
 }
 
-interface RaidDatabase {
-  configs: RaidConfig[];
-}
-
-const DB_PATH = path.join(process.cwd(), 'src', 'data', 'anti-raid.json');
-
 export class AntiRaidHandler {
   private static instance: AntiRaidHandler;
-  private db: RaidDatabase = { configs: [] };
   private joinTracker = new Map<string, number[]>(); // guildId -> [timestamps]
 
-  private constructor() {
-    this.loadDatabase();
-  }
+  private constructor() {}
 
   static getInstance(): AntiRaidHandler {
     if (!AntiRaidHandler.instance) {
@@ -49,35 +39,21 @@ export class AntiRaidHandler {
     return AntiRaidHandler.instance;
   }
 
-  private loadDatabase(): void {
-    try {
-      if (fs.existsSync(DB_PATH)) {
-        const data = fs.readFileSync(DB_PATH, 'utf-8');
-        this.db = JSON.parse(data);
-      } else {
-        this.ensureDataDir();
-        this.saveDatabase();
-      }
-    } catch (error) {
-      console.error('❌ AntiRaidHandler: Failed to load database:', error);
-      this.db = { configs: [] };
-    }
+  private get db() {
+    return ((global as any).db as DatabaseHandler).getDb();
   }
 
-  private saveDatabase(): void {
-    try {
-      this.ensureDataDir();
-      fs.writeFileSync(DB_PATH, JSON.stringify(this.db, null, 2));
-    } catch (error) {
-      console.error('❌ AntiRaidHandler: Failed to save database:', error);
-    }
-  }
-
-  private ensureDataDir(): void {
-    const dataDir = path.join(process.cwd(), 'src', 'data');
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
+  private mapRowToConfig(row: any): RaidConfig {
+    return {
+      guildId: row.guild_id,
+      enabled: row.enabled === 1,
+      enabledAt: row.enabled_at,
+      enabledBy: row.enabled_by,
+      joinThreshold: row.join_threshold,
+      timeWindow: row.time_window,
+      slowmodeSeconds: row.slowmode_seconds,
+      verificationLevel: row.verification_level,
+    };
   }
 
   enable(
@@ -87,39 +63,41 @@ export class AntiRaidHandler {
     timeWindow: number = 30000, // 30 seconds
     slowmodeSeconds: number = 5
   ): RaidConfig {
-    // Remove if already exists
-    this.db.configs = this.db.configs.filter(c => c.guildId !== guildId);
+    const enabledAt = Date.now();
+    const verificationLevel = 'HIGH';
 
-    const config: RaidConfig = {
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO anti_raid_configs 
+      (guild_id, enabled, enabled_at, enabled_by, join_threshold, time_window, slowmode_seconds, verification_level)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    stmt.run(
+      guildId, 1, enabledAt, enabledBy, joinThreshold, timeWindow, slowmodeSeconds, verificationLevel
+    );
+
+    return {
       guildId,
       enabled: true,
-      enabledAt: Date.now(),
+      enabledAt,
       enabledBy,
       joinThreshold,
       timeWindow,
       slowmodeSeconds,
-      verificationLevel: 'HIGH',
+      verificationLevel,
     };
-
-    this.db.configs.push(config);
-    this.saveDatabase();
-    return config;
   }
 
   disable(guildId: string): boolean {
-    const initial = this.db.configs.length;
-    this.db.configs = this.db.configs.filter(c => c.guildId !== guildId);
-
-    if (this.db.configs.length < initial) {
-      this.saveDatabase();
-      return true;
-    }
-
-    return false;
+    const stmt = this.db.prepare('DELETE FROM anti_raid_configs WHERE guild_id = ?');
+    const info = stmt.run(guildId);
+    return info.changes > 0;
   }
 
   getConfig(guildId: string): RaidConfig | null {
-    return this.db.configs.find(c => c.guildId === guildId) || null;
+    const stmt = this.db.prepare('SELECT * FROM anti_raid_configs WHERE guild_id = ?');
+    const row = stmt.get(guildId);
+    return row ? this.mapRowToConfig(row) : null;
   }
 
   isEnabled(guildId: string): boolean {
@@ -130,7 +108,7 @@ export class AntiRaidHandler {
   trackJoin(guildId: string): number {
     const now = Date.now();
     const config = this.getConfig(guildId);
-    if (!config) return 0;
+    if (!config || !config.enabled) return 0;
 
     if (!this.joinTracker.has(guildId)) {
       this.joinTracker.set(guildId, []);
@@ -147,7 +125,7 @@ export class AntiRaidHandler {
 
   isRaidDetected(guildId: string): boolean {
     const config = this.getConfig(guildId);
-    if (!config) return false;
+    if (!config || !config.enabled) return false;
 
     const joinCount = this.joinTracker.get(guildId)?.length || 0;
     return joinCount >= config.joinThreshold;

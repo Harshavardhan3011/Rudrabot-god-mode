@@ -29,6 +29,7 @@ export interface UserData {
   level: number;
   prestige: number;
   badges: string[];
+  achievements: string[];
 
   // Trust & Security
   trustScore: number;
@@ -68,6 +69,21 @@ export interface UserData {
   profileColor?: string;
   profileBio?: string;
   markedWith?: string; // Marriage/Family system
+
+  // Creator Profile (Module: Creator)
+  creatorProfile?: {
+    youtubeId: string | null;
+    youtubeSubscribers: number;
+    youtubeViews: number;
+    youtubeVideos: number;
+    twitchUsername: string | null;
+    twitchFollowers: number;
+    twitterHandle: string | null;
+    twitterFollowers: number;
+    totalViewsAllPlatforms: number;
+    lastSyncedAt: number;
+    createdAt: number;
+  };
 
   // Timestamps
   createdAt: number;
@@ -122,7 +138,7 @@ export interface GuildData {
 
   // Antinuke Flags (44 Total)
   antinuke: {
-    antiDan: boolean;
+    antiBan: boolean;
     antiKick: boolean;
     antiBotAdd: boolean;
     antiAltJoin: boolean;
@@ -140,8 +156,17 @@ export interface GuildData {
   // Whitelist & Trust
   whitelist: {
     userId: string;
-    bypasses: string[];
+    username?: string;
+    bypasses?: string[];
+    reason?: string;
+    addedAt?: string;
   }[];
+
+  // Anti-VC Feature Toggles (Disabled by Default)
+  antiVcToggles?: {
+    antiVcJoin: boolean;
+    antiVcLeave: boolean;
+  };
 
   // Moderation Settings
   moderation: {
@@ -163,6 +188,21 @@ export interface GuildData {
     dmEnabled: boolean;
     cardEnabled: boolean;
     backgroundColor?: string;
+  };
+
+  goodbye?: {
+    enabled: boolean;
+    channel?: string;
+    message?: string;
+  };
+
+  expansion?: {
+    enabled: boolean;
+    membersJoinedTracking: number;
+    totalMembersAtInit: number;
+    growthRate: number;
+    currentPhase: string;
+    initiatedAt: number;
   };
 
   // Economy Settings (Module 7)
@@ -196,6 +236,25 @@ export interface GuildData {
     word: string;
     response: string;
     embedType: "text" | "embed" | "dm";
+  }[];
+
+  // Echo Module - Auto Replies
+  echoTriggers?: {
+    id: string;
+    trigger: string;
+    response: string;
+    exactMatch: boolean;
+    createdAt: number;
+    createdBy: string;
+  }[];
+
+  // Echo Module - Reaction Rules
+  reactionRules?: {
+    id: string;
+    trigger: string;
+    emoji: string;
+    createdAt: number;
+    createdBy: string;
   }[];
 
   // Premium Features
@@ -301,7 +360,7 @@ export interface BotConfig {
   clientId: string;
   ashuId: string;
   zoroId: string;
-  dbType: "GITHUB_JSON" | "SQLITE";
+  dbType: "SQLITE";
   dbPath: string;
   geminiKey: string;
   vcStatusInterval: number;

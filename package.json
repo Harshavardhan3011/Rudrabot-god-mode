@@ -4,13 +4,11 @@
   "description": "🔱 RUDRA.0x: The Supreme Digital Entity - Advanced Discord Bot with 1,300+ Commands",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "ts-node src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "watch": "tsc --watch",
+    "dev": "ts-node src/index.ts",
     "deploy": "ts-node src/deploy-commands.ts",
-    "lint": "eslint src --ext .ts",
-    "format": "prettier --write \"src/**/*.ts\""
+    "watch": "tsc --watch"
   },
   "keywords": [
     "discord",

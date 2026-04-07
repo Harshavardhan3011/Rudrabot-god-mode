@@ -168,9 +168,15 @@ class StatusRotator {
       return this.priorityStatuses.zoroActive;
     }
 
-    // Check for active locks or raids (would integrate with antinuke module)
-    // This is placeholder logic
-    const hasActiveRaid = false; // Would be set by antinuke module
+    // Detect broad channel lockdown patterns to prioritize emergency status.
+    const hasActiveRaid = this.client.guilds.cache.some((guild) => {
+      return guild.channels.cache.some((channel) => {
+        if (!("permissionOverwrites" in channel)) return false;
+        const overwrite = channel.permissionOverwrites.cache.get(guild.roles.everyone.id);
+        return overwrite?.deny?.has("SendMessages") || false;
+      });
+    });
+
     if (hasActiveRaid) {
       return this.priorityStatuses.locked;
     }

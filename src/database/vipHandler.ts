@@ -3,8 +3,7 @@
  * Handles: grants, revokes, expirations, and tier verification
  */
 
-import fs from 'fs';
-import path from 'path';
+import DatabaseHandler from './dbHandler';
 
 export type VIPTier = 'VIP' | 'VIP_PRTR';
 export type VIPDurationChoice =
@@ -27,17 +26,10 @@ interface VIPRecord {
   grantedBy: string; // Who granted this VIP status
 }
 
-interface VIPDatabase {
-  vips: VIPRecord[];
-  lastUpdated: number;
-}
-
-const DB_PATH = path.join(process.cwd(), 'src', 'data', 'vip.json');
-
 export class VIPHandler {
   private static instance: VIPHandler;
-  private db: VIPDatabase = { vips: [], lastUpdated: 0 };
   private expiryCheckInterval: NodeJS.Timeout | null = null;
+  private fallbackDbHandler?: DatabaseHandler;
 
   private static readonly DURATION_MAP: Record<Exclude<VIPDurationChoice, 'Lifetime'>, number> = {
     '1hr': 60 * 60 * 1000,
@@ -52,7 +44,6 @@ export class VIPHandler {
   };
 
   private constructor() {
-    this.loadDatabase();
     this.startExpiryCheck();
   }
 
@@ -63,66 +54,28 @@ export class VIPHandler {
     return VIPHandler.instance;
   }
 
-  /**
-   * Load VIP database from JSON file
-   */
-  private loadDatabase(): void {
-    try {
-      if (fs.existsSync(DB_PATH)) {
-        const data = fs.readFileSync(DB_PATH, 'utf-8');
-        this.db = JSON.parse(data);
-        this.migrateLegacyRecords();
-      } else {
-        this.ensureDataDir();
-        this.saveDatabase();
-      }
-    } catch (error) {
-      console.error('❌ VIPHandler: Failed to load database:', error);
-      this.db = { vips: [], lastUpdated: Date.now() };
+  private get db() {
+    const globalDb = (global as any).db as DatabaseHandler | undefined;
+    if (globalDb) {
+      return globalDb.getDb();
     }
+
+    if (!this.fallbackDbHandler) {
+      const dbPath = process.env.DATABASE_PATH || './src/database/rudra_main.sqlite';
+      this.fallbackDbHandler = new DatabaseHandler(dbPath);
+    }
+
+    return this.fallbackDbHandler.getDb();
   }
 
-  private migrateLegacyRecords(): void {
-    this.db.vips = this.db.vips.map((record) => {
-      const normalizedTier: VIPTier =
-        (record as any).tier === 'VIP_PRTR' || (record as any).tier === 'VIPPRTR'
-          ? 'VIP_PRTR'
-          : 'VIP';
-
-      const rawExpiresAt = (record as any).expiresAt;
-      const expiresAt = rawExpiresAt === null || rawExpiresAt === undefined ? null : Number(rawExpiresAt);
-
-      return {
-        userId: String((record as any).userId),
-        tier: normalizedTier,
-        grantedAt: Number((record as any).grantedAt || Date.now()),
-        expiresAt: Number.isFinite(expiresAt) ? expiresAt : null,
-        grantedBy: String((record as any).grantedBy || 'system-migration'),
-      };
-    });
-  }
-
-  /**
-   * Save VIP database to JSON file
-   */
-  private saveDatabase(): void {
-    try {
-      this.ensureDataDir();
-      this.db.lastUpdated = Date.now();
-      fs.writeFileSync(DB_PATH, JSON.stringify(this.db, null, 2));
-    } catch (error) {
-      console.error('❌ VIPHandler: Failed to save database:', error);
-    }
-  }
-
-  /**
-   * Ensure data directory exists
-   */
-  private ensureDataDir(): void {
-    const dataDir = path.join(process.cwd(), 'src', 'data');
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
+  private mapRowToVIP(row: any): VIPRecord {
+    return {
+      userId: row.user_id,
+      tier: row.tier as VIPTier,
+      grantedAt: row.granted_at,
+      expiresAt: row.expires_at,
+      grantedBy: row.granted_by,
+    };
   }
 
   /**
@@ -146,67 +99,52 @@ export class VIPHandler {
    * Grant VIP status to a user
    */
   grant(userId: string, duration: VIPDurationChoice, grantedBy: string, tier: VIPTier): VIPRecord {
-    // Remove existing if present
-    this.db.vips = this.db.vips.filter(v => v.userId !== userId);
-
     const parsedDuration = this.parseDuration(duration);
     const expiresAt = parsedDuration === null ? null : Date.now() + parsedDuration;
+    const grantedAt = Date.now();
 
-    const record: VIPRecord = {
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO vip_users (user_id, tier, granted_at, expires_at, granted_by)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    
+    stmt.run(userId, tier, grantedAt, expiresAt, grantedBy);
+
+    return {
       userId,
       tier,
-      grantedAt: Date.now(),
+      grantedAt,
       expiresAt,
       grantedBy,
     };
-
-    this.db.vips.push(record);
-    this.saveDatabase();
-
-    return record;
   }
 
   /**
    * Revoke VIP status from a user
    */
   revoke(userId: string): boolean {
-    const initial_length = this.db.vips.length;
-    this.db.vips = this.db.vips.filter(v => v.userId !== userId);
-
-    if (this.db.vips.length < initial_length) {
-      this.saveDatabase();
-      return true;
-    }
-
-    return false;
+    const stmt = this.db.prepare('DELETE FROM vip_users WHERE user_id = ?');
+    const info = stmt.run(userId);
+    return info.changes > 0;
   }
 
   /**
    * Check if user is currently VIP
    */
   isVIP(userId: string): boolean {
-    const vip = this.db.vips.find(v => v.userId === userId);
-    if (!vip) return false;
-
-    if (vip.expiresAt === null) {
-      return true;
-    }
-
-    // Check if expired
-    if (vip.expiresAt < Date.now()) {
-      this.revoke(userId);
-      return false;
-    }
-
-    return true;
+    return this.getVIP(userId) !== null;
   }
 
   /**
    * Get VIP record for a user
    */
   getVIP(userId: string): VIPRecord | null {
-    const vip = this.db.vips.find(v => v.userId === userId);
-    if (!vip) return null;
+    const stmt = this.db.prepare('SELECT * FROM vip_users WHERE user_id = ?');
+    const row = stmt.get(userId);
+    
+    if (!row) return null;
+
+    const vip = this.mapRowToVIP(row);
 
     if (vip.expiresAt === null) {
       return vip;
@@ -225,19 +163,22 @@ export class VIPHandler {
    * Get all active VIPs
    */
   getAllVIPs(): VIPRecord[] {
-    // Filter out expired
-    this.db.vips = this.db.vips.filter(v => {
-      if (v.expiresAt === null) {
-        return true;
-      }
-      if (v.expiresAt < Date.now()) {
-        return false;
-      }
-      return true;
-    });
+    const stmt = this.db.prepare('SELECT * FROM vip_users');
+    const rows = stmt.all();
+    
+    const vips = rows.map((row: any) => this.mapRowToVIP(row));
+    const activeVips = [];
 
-    this.saveDatabase();
-    return this.db.vips;
+    for (const vip of vips) {
+      if (vip.expiresAt === null || vip.expiresAt > Date.now()) {
+        activeVips.push(vip);
+      } else {
+        // Auto-revoke expired ones found during full scan
+        this.revoke(vip.userId);
+      }
+    }
+
+    return activeVips;
   }
 
   /**
@@ -280,12 +221,15 @@ export class VIPHandler {
    */
   private startExpiryCheck(): void {
     this.expiryCheckInterval = setInterval(() => {
-      const initialCount = this.db.vips.length;
-      this.db.vips = this.db.vips.filter(v => v.expiresAt === null || v.expiresAt > Date.now());
+      try {
+        const stmt = this.db.prepare('DELETE FROM vip_users WHERE expires_at IS NOT NULL AND expires_at < ?');
+        const info = stmt.run(Date.now());
 
-      if (this.db.vips.length < initialCount) {
-        this.saveDatabase();
-        console.log(`🔄 VIPHandler: Expired ${initialCount - this.db.vips.length} VIP record(s)`);
+        if (info.changes > 0) {
+          console.log(`🔄 VIPHandler: Expired ${info.changes} VIP record(s) automatically`);
+        }
+      } catch (err) {
+        console.error('Error in VIP Expiry Check loop:', err);
       }
     }, 5 * 60 * 1000); // Every 5 minutes
   }

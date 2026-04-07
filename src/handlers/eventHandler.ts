@@ -27,7 +27,7 @@ class EventHandlerClass {
     const eventsPath = path.join(process.cwd(), "src/events");
 
     if (!fs.existsSync(eventsPath)) {
-      console.warn("⚠️ Events directory not found. Creating placeholder...");
+      console.warn("⚠️ Events directory not found. Creating events directory...");
       fs.mkdirSync(eventsPath, { recursive: true });
       return;
     }

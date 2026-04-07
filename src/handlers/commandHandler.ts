@@ -34,7 +34,7 @@ class CommandHandler {
 
     if (!fs.existsSync(commandsPath)) {
       console.warn(
-        "⚠️ Commands directory not found. Creating placeholder structure..."
+        "⚠️ Commands directory not found. Creating commands structure..."
       );
       fs.mkdirSync(commandsPath, { recursive: true });
       return;
@@ -52,7 +52,7 @@ class CommandHandler {
 
       const files = fs
         .readdirSync(modulePath)
-        .filter((f) => f.endsWith(".ts") || f.endsWith(".js"));
+        .filter((f) => (f.endsWith(".ts") || f.endsWith(".js")) && !f.includes("generator"));
 
       for (const file of files) {
         try {
@@ -74,6 +74,7 @@ class CommandHandler {
               name: commandName,
               description: commandDesc,
               category: module,
+              module,
               execute: moduleExport.execute,
               data: slashData
             };
@@ -100,11 +101,15 @@ class CommandHandler {
             continue;
           }
 
+          if (this.commands.has(commandName)) {
+            console.warn(`⚠️ Skipping duplicate runtime command: ${commandName} from ${module}/${file}`);
+            continue;
+          }
+
           this.commands.set(commandName, command);
-          this.commandsArray.push({
-            name: commandName,
-            description: commandDesc,
-          });
+          if (command.data?.toJSON) {
+            this.commandsArray.push(command.data.toJSON());
+          }
 
           console.log(`  ✅ Loaded: ${commandName} (${module})`);
         } catch (error) {
@@ -130,31 +135,92 @@ class CommandHandler {
         process.env.BOT_TOKEN || ""
       );
 
+      const clampText = (value: unknown, maxLength: number, fallback = ""): string => {
+        const str = (typeof value === "string" ? value : fallback).trim();
+        if (!str) return fallback;
+        return str.length > maxLength ? str.slice(0, maxLength) : str;
+      };
+
+      const sanitizePayload = (payload: any): any => {
+        const clone = JSON.parse(JSON.stringify(payload));
+        clone.name = clampText(clone.name, 32, clone.name || "command");
+        clone.description = clampText(clone.description, 100, "No description");
+
+        const sanitizeOptions = (options: any[]): any[] =>
+          options.map((option) => {
+            const next = { ...option };
+            if (typeof next.name === "string") next.name = clampText(next.name, 32, next.name);
+            if (typeof next.description === "string") next.description = clampText(next.description, 100, "No description");
+            if (Array.isArray(next.options)) next.options = sanitizeOptions(next.options);
+            if (Array.isArray(next.choices)) {
+              next.choices = next.choices.map((choice: any) => ({
+                ...choice,
+                name: clampText(choice?.name, 100, "choice"),
+                ...(typeof choice?.value === "string"
+                  ? { value: clampText(choice.value, 100, choice.value) }
+                  : {}),
+              }));
+            }
+            return next;
+          });
+
+        if (Array.isArray(clone.options)) {
+          clone.options = sanitizeOptions(clone.options);
+        }
+
+        return clone;
+      };
+
+      const uniquePayloadMap = new Map<string, any>();
+      for (const payload of this.commandsArray) {
+        const sanitized = sanitizePayload(payload);
+        const name = sanitized?.name as string | undefined;
+        if (!name) continue;
+        if (uniquePayloadMap.has(name)) {
+          console.warn(`⚠️ Duplicate slash command name detected during registration: ${name} (keeping latest)`);
+        }
+        uniquePayloadMap.set(name, sanitized);
+      }
+      const payload = Array.from(uniquePayloadMap.values());
+
       console.log("🔄 Registering slash commands with Discord...");
 
-      const devGuildId = process.env.DEV_GUILD_ID;
-      if (devGuildId) {
-        await rest.put(
-          Routes.applicationGuildCommands(process.env.CLIENT_ID || "", devGuildId),
-          {
-            body: this.commandsArray,
-          }
-        );
+      const configuredGuildIds = (process.env.DEV_GUILD_ID || "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+      const guildIds = configuredGuildIds.length
+        ? configuredGuildIds
+        : this.client.guilds.cache.map((g) => g.id);
 
-        console.log(
-          `✅ Registered ${this.commandsArray.length} slash commands to DEV_GUILD_ID=${devGuildId}`
-        );
-        return;
+      let guildRegisteredCount = 0;
+      for (const guildId of guildIds) {
+        try {
+          await rest.put(
+            Routes.applicationGuildCommands(process.env.CLIENT_ID || "", guildId),
+            { body: payload }
+          );
+          guildRegisteredCount++;
+          console.log(`✅ Registered ${payload.length} slash commands to guild ${guildId}`);
+        } catch (error: any) {
+          if (error?.code === 50001) {
+            console.warn(`⚠️ Missing Access for guild ${guildId}; skipping guild registration.`);
+          } else {
+            throw error;
+          }
+        }
       }
 
-      // Global commands can take time to propagate.
-      await rest.put(Routes.applicationCommands(process.env.CLIENT_ID || ""), {
-        body: this.commandsArray,
-      });
+      if (guildRegisteredCount === 0) {
+        // Global commands can take time to propagate.
+        await rest.put(Routes.applicationCommands(process.env.CLIENT_ID || ""), {
+          body: payload,
+        });
 
-      console.log(
-        `✅ Registered ${this.commandsArray.length} global slash commands (propagation may take up to 1 hour)`
-      );
+        console.log(
+          `✅ Registered ${payload.length} global slash commands (propagation may take up to 1 hour)`
+        );
+      }
     } catch (error) {
       console.error("❌ Failed to register slash commands:", error);
     }
@@ -185,14 +251,26 @@ class CommandHandler {
    * Get commands by category
    */
   getCommandsByCategory(category: string): Command[] {
-    return Array.from(this.commands.filter((cmd) => cmd.category === category).values());
+    const lookup = category.toLowerCase();
+    return Array.from(
+      this.commands.filter((cmd) => {
+        const cmdCategory = (cmd.category || cmd.module || "").toLowerCase();
+        return cmdCategory === lookup;
+      }).values()
+    );
   }
 
   /**
    * Get commands by module
    */
   getCommandsByModule(module: string): Command[] {
-    return Array.from(this.commands.filter((cmd) => cmd.module === module).values());
+    const lookup = module.toLowerCase();
+    return Array.from(
+      this.commands.filter((cmd) => {
+        const cmdModule = (cmd.module || cmd.category || "").toLowerCase();
+        return cmdModule === lookup;
+      }).values()
+    );
   }
 
   /**
